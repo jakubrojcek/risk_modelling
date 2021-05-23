@@ -390,3 +390,179 @@ for (i in 1:2){
 }
 
 
+################### Options and Bonds
+# Black-Scholes formula
+bs = function(X, P, r, sigma, T){
+  d1 = (log(P/X) + (r + 0.5*sigma^2)*(T))/(sigma*sqrt(T))
+  d2 = d1 - sigma*sqrt(T)
+  Call = P*pnorm(d1,mean=0,sd=1)-X*exp(-r*(T))*pnorm(d2,mean=0,sd=1)
+  Put = X*exp(-r*(T))*pnorm(-d2,mean=0,sd=1)-P*pnorm(-d1,mean=0,sd=1)
+  Delta.Call = pnorm(d1, mean = 0, sd = 1)
+  Delta.Put = Delta.Call - 1
+  Gamma = dnorm(d1, mean = 0, sd = 1)/(P*sigma*sqrt(T))
+  return(list(Call=Call,Put=Put,Delta.Call=Delta.Call,Delta.Put=Delta.Put,Gamma=Gamma))
+}
+
+
+f = bs(X = 90, P = 100, r = 0.05, sigma = 0.2, T = 0.5)
+print(f)
+
+
+# Pseudo randon numbers
+x = seq(-3, 3, by = 0.1)
+plot(x, pnorm(x), type = "l")
+
+# random numbers in R
+set.seed(12) # set seed
+S = 10
+runif(S)
+rnorm(S)
+rt(S,4)
+
+# Bond pricing
+yield = c(5.00, 5.69, 6.09, 6.38, 6.61,
+          6.79, 6.94, 7.07, 7.19, 7.30) # yield curve
+T = length(yield)    # number of time periods
+r = 0.07   # initial yield rate
+Par = 10   # par value
+coupon = r * Par     # coupon payments
+cc = rep(coupon, T)  # vector of cash flows
+cc[T] = cc[T] + Par  # add par to cash flows
+P = sum(cc/((1+yield/100)^(1:T)))     # calculate price
+print(P)
+
+
+
+# Let's simulate yields
+set.seed(12)         # set seed
+sigma = 1.5          # daily yield volatiltiy
+S = 8      # number of simulations
+r = rnorm(S, 0, sigma) # generate random numbers
+ysim = matrix(nrow=length(yield),ncol=S)
+for (i in 1:S) ysim[,i]=yield+r[i]
+matplot(ysim,type='l')
+
+
+# Let's now simulate Bond prices
+SP = rep(NA, length = S)
+for (i in 1:S){      # S simulations
+  SP[i] = sum(cc/((1+ysim[,i]/100)^(1:T)))
+}
+SP = SP-(mean(SP) - P) # correct for mean
+par(mfrow=c(1,2), pty="s")
+barplot(SP)
+hist(SP,probability=TRUE)
+x=seq(6,16,length=100)
+lines(x, dnorm(x, mean = mean(SP), sd = sd(SP)))
+S = 50000
+r = rnorm(S, 0, sigma) # generate random numbers
+ysim = matrix(nrow=length(yield),ncol=S)
+for (i in 1:S) ysim[,i]=yield+r[i]
+SP = rep(NA, length = S)
+for (i in 1:S){      # S simulations
+  SP[i] = sum(cc/((1+ysim[,i]/100)^(1:T)))
+}
+SP = SP-(mean(SP) - P) # correct for mean
+par(mfrow=c(1,2), pty="s")
+barplot(SP)
+hist(SP,probability=TRUE)
+x=seq(6,16,length=100)
+lines(x, dnorm(x, mean = mean(SP), sd = sd(SP)))
+
+
+# let's value  options using Black-Scholes
+
+P0 = 50    # initial spot price
+sigma = 0.2          # annual volatility
+r = 0.05   # annual interest
+TT = 0.5   # time to expiration
+X = 40     # strike price
+f = bs(X = X, P = P0, r = r, sigma = sigma, T = TT) # analytical call price
+## This calculation uses the Black-Scholes pricing function (Listing 6.1/6.2)
+print(f)
+
+
+# And now let's value options using MC, we're simulating the final prices
+
+set.seed(12)         # set seed
+S = 1e6    # number of simulations
+F = P0*exp(r*TT)     # futures price
+ysim = rnorm(S,-0.5*sigma^2*TT,sigma*sqrt(TT)) # sim returns, lognorm corrected
+F = F*exp(ysim)      # sim futures price
+SP = F-X   # payoff
+SP[SP<0] = 0         # set negative outcomes to zero
+fsim = SP*exp(-r*TT)           # discount
+call_sim = mean(fsim)          # simulated price
+print(call_sim)
+
+# plot results
+par(mfrow=c(1,2), pty="s")
+hist(F, probability=TRUE, ylim=c(0,0.06))
+x = seq(min(F), max(F), length=100)
+lines(x, dnorm(x, mean = mean(F), sd = sd(SP)))
+hist(fsim, nclass=100, probability=TRUE)
+
+
+
+# Simulate VaR
+set.seed(1)          # set seed
+S = 1e7    # number of simulations
+s2 = 0.01^2          # daily variance
+p = 0.01   # probability
+r = 0.05   # annual riskfree rate
+P = 100    # price today
+ysim = rnorm(S,r/365-0.5*s2,sqrt(s2)) # sim returns
+Psim = P*exp(ysim)   # sim future prices
+q = sort(Psim-P)     # simulated P/L
+VaR1 = -q[p*S]
+print(VaR1)
+
+
+
+# Simulate option VaR
+
+TT = 0.25  # time to expiration
+X = 100    # strike price
+sigma = sqrt(s2*250)           # annual volatility
+f = bs(X, P, r, sigma, TT)     # analytical call price
+fsim = bs(X,Psim,r,sigma,TT-(1/365)) # sim option prices
+q = sort(fsim$Call-f$Call)     # simulated P/L
+VaR2 = -q[p*S]
+print(VaR2)
+
+
+# example
+X1 = 100
+X2 = 110
+f1 = bs(X1, P, r, sigma, TT)
+f2 = bs(X2, P, r, sigma, TT)
+f2sim = bs(X2, Psim, r, sigma, TT-(1/365))
+f1sim = bs(X1, Psim, r, sigma, TT-(1/365))
+q = sort(f1sim$Call + f2sim$Put + Psim-f1$Call - f2$Put-P);
+VaR3 = -q[p*S]
+print(VaR3)
+
+# Simulate two asset returns
+library (MASS)
+set.seed(12)         # set seed
+mu = rep(r/365, 2)   # return mean
+Sigma = matrix(c(0.01, 0.0005, 0.0005, 0.02),ncol=2) # covariance matrix
+y = mvrnorm(S,mu,Sigma)        # simulated returns
+
+# VaR of portfolio of two assets
+K=2
+P = c(100, 50)       # prices
+x = rep(1, 2)        # number of assets
+Port = P %*% x       # portfolio at t
+Psim = matrix(t(matrix(P,K,S)),ncol=K)*exp(y) # simulated prices
+PortSim = Psim %*% x           # simulated portfolio value
+q = sort(PortSim-Port[1,1])    # simulated P/L
+VaR4 = -q[S*p]
+print(VaR4)
+
+# two asset case with an option
+f = bs(X = P[2], P = P[2], r = r, sigma = sigma, T = TT)
+fsim = bs(X = P[2], P = Psim[,2], r = r, sigma = sigma, T = TT-(1/365))
+q = sort(fsim$Call + Psim[,1] - f$Call - P[1]);
+VaR5 = -q[p*S]
+print(VaR5)
